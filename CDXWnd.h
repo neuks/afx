@@ -26,6 +26,40 @@ struct CDXObject
   LPDIRECT3DTEXTURE9 *pTexture;   // Texture container
 };
 
+struct CDXAnimate
+{
+  LPD3DXFRAME pFrame;
+  LPD3DXANIMATIONCONTROLLER pController;
+};
+
+struct D3DXFRAME_DERIVED : public D3DXFRAME
+{
+  D3DXMATRIXA16 CombinedTransformationMatrix;
+};
+
+struct D3DXMESHCONTAINER_DERIVED : public D3DXMESHCONTAINER
+{
+  LPDIRECT3DTEXTURE9 *ppTextures;
+  LPD3DXEFFECT       *ppEffects;
+};
+
+struct CAllocateHierarchy : ID3DXAllocateHierarchy
+{
+  STDMETHOD(CreateFrame)(LPCSTR Name, LPD3DXFRAME *ppNewFrame);
+  STDMETHOD(CreateMeshContainer)(
+      LPCSTR Name,
+      CONST D3DXMESHDATA *pMeshData,
+      CONST D3DXMATERIAL *pMaterials,
+      CONST D3DXEFFECTINSTANCE *pEffectInstances,
+      DWORD NumMaterials,
+      CONST DWORD *pAdjacency,
+      LPD3DXSKININFO pSkinInfo,
+      LPD3DXMESHCONTAINER *ppNewMeshContainer
+      );
+  STDMETHOD(DestroyFrame)(LPD3DXFRAME pFrameToFree);
+  STDMETHOD(DestroyMeshContainer)(LPD3DXMESHCONTAINER pMeshContainer);
+};
+
 struct CDXWnd : CWnd
 {
   // Member Attributes
@@ -38,9 +72,10 @@ struct CDXWnd : CWnd
   // Operator Functions
   void SetCamera(CDXCamera *pCamera);
   void SetLight(CDXLight *pLight);
-  void LoadObject(CDXObject *pObject, LPSTR pFileName);
-  void RendObject(CDXObject *pObject, double Time, double Delta);
-  void KillObject(CDXObject *pObject);
+  void DrawFrame(LPD3DXFRAME pFrame, double Time, double Delta);
+  void UpdateFrame(LPD3DXFRAME pFrame, LPD3DXMATRIX pParentMatrix);
+  void LoadAnimation(CDXAnimate *pAnimation, LPSTR pFileName);
+  void DrawAnimation(CDXAnimate *pAnimation, double Time, double Delta);
 
   // Callback Functions
   virtual void OnSetup(D3DPRESENT_PARAMETERS *d3dpp);

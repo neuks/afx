@@ -20,7 +20,7 @@
 #define INFORM(cond) cond
 #define ASSERT(cond) cond
 #else
-#define INFORM(cond, msg) \
+#define INFORM(cond) \
   if(cond) \
   { \
     printf("%s:%d:INFORM:%s\n", __FILE__, __LINE__, #cond); \

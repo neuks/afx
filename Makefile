@@ -5,11 +5,11 @@
 ############################################################################### 
 
 # Configurations
-INCLUDE=
-ASFLAGS=$(INCLUDE) -O2
-CCFLAGS=$(INCLUDE) -O2
-CXFLAGS=$(INCLUDE) -O2
-FCFLAGS=$(INCLUDE) -O2
+INCLUDE=-DDEBUG
+ASFLAGS=$(INCLUDE) -g
+CCFLAGS=$(INCLUDE) -g
+CXFLAGS=$(INCLUDE) -g
+FCFLAGS=$(INCLUDE) -g
 LDFLAGS=
 
 # Objectives
@@ -27,8 +27,6 @@ $(TARGETS) : $(OBJECTS)
 debug: all
 
 run: all 
-	@echo [EX] $(TARGETS)
-	@$(TARGETS)
 
 clean:  
 	@echo [RM] $(OBJECTS) $(TARGETS)

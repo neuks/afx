@@ -13,7 +13,218 @@ IDirect3D9 *g_pD3D = NULL;
 double g_pTime, g_cTime;
 
 //=============================================================================
-// CDXWnd Implementation
+// Mesh Hierarchy Allocator
+//=============================================================================
+
+HRESULT CAllocateHierarchy::CreateFrame(LPCSTR Name, LPD3DXFRAME *ppNewFrame)
+{
+  D3DXFRAME_DERIVED *pFrame = new D3DXFRAME_DERIVED;
+
+  // Error check
+  INFORM(pFrame == NULL); if (pFrame == NULL)
+  {
+    return E_OUTOFMEMORY;
+  }
+
+  // Assign name
+  if (Name)
+  {
+    UINT len = strlen(Name) + 1;
+    pFrame->Name = new char[len];
+    CopyMemory(pFrame->Name, Name, len);
+  }
+
+  // Initializations
+  D3DXMatrixIdentity(&pFrame->TransformationMatrix);
+  D3DXMatrixIdentity(&pFrame->CombinedTransformationMatrix);
+  pFrame->pMeshContainer   = NULL;
+  pFrame->pFrameFirstChild = NULL;
+  pFrame->pFrameSibling    = NULL;
+
+  *ppNewFrame = pFrame;
+
+  return D3D_OK;
+}
+
+HRESULT CAllocateHierarchy::CreateMeshContainer(
+    LPCSTR Name,
+    CONST D3DXMESHDATA *pMeshData,
+    CONST D3DXMATERIAL *pMaterials,
+    CONST D3DXEFFECTINSTANCE *pEffectInstances,
+    DWORD NumMaterials,
+    CONST DWORD *pAdjacency,
+    LPD3DXSKININFO pSkinInfo,
+    LPD3DXMESHCONTAINER *ppNewMeshContainer)
+{
+  LPDIRECT3DDEVICE9 pDevice = NULL;
+  pMeshData->pMesh->GetDevice(&pDevice);
+
+  // Create mesh container
+  D3DXMESHCONTAINER_DERIVED *pMeshContainer = new D3DXMESHCONTAINER_DERIVED;
+  ZeroMemory(pMeshContainer, sizeof(D3DXMESHCONTAINER_DERIVED));
+  
+  // Error check
+  INFORM(pMeshContainer == NULL); if (pMeshContainer == NULL)
+  {
+    return E_OUTOFMEMORY;
+  }
+
+  // Copy name
+  if (Name)
+  {
+    UINT len = strlen(Name) + 1;
+    pMeshContainer->Name = new char[len];
+    CopyMemory(pMeshContainer->Name, Name, len);
+  }
+
+  // Save mesh data
+  if (!(pMeshData->pMesh->GetFVF() & D3DFVF_NORMAL))
+  {
+    pMeshData->pMesh->CloneMeshFVF(D3DXMESH_MANAGED,
+        D3DFVF_XYZ|D3DFVF_NORMAL|D3DFVF_TEX1, pDevice,
+        &(pMeshContainer->MeshData.pMesh));
+    pMeshContainer->MeshData.Type  = pMeshData->Type;
+    D3DXComputeNormals(pMeshContainer->MeshData.pMesh, NULL);
+  }
+  else
+  {
+    pMeshContainer->MeshData.pMesh = pMeshData->pMesh;
+    pMeshContainer->MeshData.Type  = pMeshData->Type;
+    pMeshContainer->MeshData.pMesh->AddRef();
+  }
+
+  // Copy counter
+  if (NumMaterials > 0)
+  {
+    int NumFaces = pMeshData->pMesh->GetNumFaces();
+    pMeshContainer->NumMaterials = NumMaterials;
+    pMeshContainer->pMaterials   = new D3DXMATERIAL[NumMaterials];
+    pMeshContainer->ppTextures   = new LPDIRECT3DTEXTURE9[NumMaterials];
+    pMeshContainer->pEffects     = new D3DXEFFECTINSTANCE[NumMaterials];
+    pMeshContainer->ppEffects    = new LPD3DXEFFECT[NumMaterials];
+    pMeshContainer->pAdjacency   = new DWORD[NumFaces*3];
+
+    INFORM(pMeshContainer->pMaterials == NULL);
+    INFORM(pMeshContainer->pAdjacency == NULL);
+    if ((pMeshContainer->pMaterials == NULL) ||
+        (pMeshContainer->pAdjacency == NULL) )
+    {
+      return E_OUTOFMEMORY;
+    }
+
+    // Initialize memory space
+    CopyMemory(pMeshContainer->pMaterials, pMaterials, sizeof(D3DXMATERIAL) *
+        NumMaterials);
+    ZeroMemory(pMeshContainer->ppTextures, sizeof(LPDIRECT3D9) *
+        NumMaterials);
+    CopyMemory(pMeshContainer->pEffects, pEffectInstances,
+        sizeof(D3DXEFFECTINSTANCE) * NumMaterials);
+    ZeroMemory(pMeshContainer->ppEffects, sizeof(LPD3DXEFFECT) *
+        NumMaterials);
+    CopyMemory(pMeshContainer->pAdjacency, pAdjacency, sizeof(DWORD) *
+        NumFaces * 3);
+
+    for (int i = 0; i < NumMaterials; i++)
+    {
+      // Load texture file
+      if (pMeshContainer->pMaterials[i].pTextureFilename)
+      if (strlen(pMeshContainer->pMaterials[i].pTextureFilename) > 0)
+      {
+        D3DXCreateTextureFromFile(pDevice,
+            pMeshContainer->pMaterials[i].pTextureFilename,
+            &pMeshContainer->ppTextures[i]);
+        pMeshContainer->pMaterials[i].pTextureFilename = NULL;
+      }
+
+      // Load effects file
+      if (pMeshContainer->pEffects[i].pEffectFilename)
+      if (strlen(pMeshContainer->pEffects[i].pEffectFilename) > 0)
+      {
+        D3DXCreateEffectFromFile(pDevice,
+            pMeshContainer->pEffects[i].pEffectFilename,
+            NULL, NULL, 0, NULL, &pMeshContainer->ppEffects[i], NULL);
+        pMeshContainer->pEffects[i].pEffectFilename = NULL;
+
+        for (int j = 0; j < pMeshContainer->pEffects[i].NumDefaults; j++)
+        {
+          LPSTR  pName  = pMeshContainer->pEffects[i].pDefaults[j].pParamName;
+          LPVOID pValue = pMeshContainer->pEffects[i].pDefaults[j].pValue;
+          DWORD  nBytes = pMeshContainer->pEffects[i].pDefaults[j].NumBytes;
+
+          switch (pMeshContainer->pEffects[i].pDefaults[j].Type)
+          {
+            case D3DXPT_BOOL:
+            case D3DXPT_INT:
+            case D3DXPT_FLOAT:
+            case D3DXPT_STRING:
+              pMeshContainer->ppEffects[i]->SetValue(pName, pValue, nBytes);
+              break;
+            case D3DXPT_TEXTURE:
+            case D3DXPT_TEXTURE2D:
+            case D3DXPT_TEXTURE3D:
+            case D3DXPT_TEXTURECUBE:
+              pMeshContainer->ppEffects[i]->SetTexture(pName,
+                  pMeshContainer->ppTextures[i]);
+              break;
+            default:
+              INFORM(TRUE);
+          }
+        }
+      }
+    }
+  }
+
+  // Save skin info
+  if (pSkinInfo)
+  {
+    pMeshContainer->pSkinInfo = pSkinInfo;
+    pSkinInfo->AddRef();
+  }
+
+  // Save created struct
+  *ppNewMeshContainer = pMeshContainer;
+
+  pDevice->Release();
+  return D3D_OK;
+}
+
+HRESULT CAllocateHierarchy::DestroyFrame(LPD3DXFRAME pFrameToFree)
+{
+  delete [] pFrameToFree->Name;
+  delete pFrameToFree;
+
+  return D3D_OK;
+}
+
+HRESULT CAllocateHierarchy::DestroyMeshContainer(
+    LPD3DXMESHCONTAINER pMeshContainerBase)
+{
+  D3DXMESHCONTAINER_DERIVED *pMeshContainer;
+
+  // Release resources
+  delete [] pMeshContainer->Name;
+  delete [] pMeshContainer->pAdjacency;
+  delete [] pMeshContainer->pMaterials;
+  for(int i = 0; i < pMeshContainer->NumMaterials; i++)
+  {
+    if (pMeshContainer->ppTextures)
+    {
+      pMeshContainer->ppTextures[i]->Release();
+    }
+    if (pMeshContainer->ppEffects)
+    {
+      pMeshContainer->ppEffects[i]->Release();
+    }
+  }
+  delete [] pMeshContainer->ppTextures;
+  delete [] pMeshContainer->ppEffects;
+  pMeshContainer->MeshData.pMesh->Release();
+  pMeshContainer->pSkinInfo->Release();
+  delete pMeshContainer;
+}
+
+//=============================================================================
+// Initializer/Deinitializer
 //=============================================================================
 
 CDXWnd::CDXWnd()
@@ -30,6 +241,10 @@ CDXWnd::~CDXWnd()
   g_pD3D->Release();
 }
 
+//=============================================================================
+// Operator Functions
+//=============================================================================
+
 void CDXWnd::SetCamera(CDXCamera *pCamera)
 {
   RECT rect;
@@ -39,7 +254,7 @@ void CDXWnd::SetCamera(CDXCamera *pCamera)
   D3DXMatrixLookAtLH(&mView, &pCamera->vPosition, &pCamera->vLookAt,
       &pCamera->vUpside);
   m_pDevice->SetTransform(D3DTS_VIEW, &mView);
-  
+
   // Calculate device aspect ratio
   GetClientRect(m_hWnd, &rect);
   float fAspect = (float)rect.right/(float)rect.bottom;
@@ -56,192 +271,132 @@ void CDXWnd::SetLight(CDXLight *pLight)
   m_pDevice->LightEnable(pLight->nIndex, pLight->bState);
 }
 
-void CDXWnd::LoadObject(CDXObject *pObject, LPSTR pFileName)
+void CDXWnd::DrawFrame(LPD3DXFRAME pFrameBase, double Time, double Delta)
 {
-  LPD3DXBUFFER pMatBuf, pEffBuf;
-  LPD3DXMESH   pMesh;
-  LPD3DXMATERIAL pMaterial;
-  LPD3DXEFFECTINSTANCE pEffeInst;
+  D3DXFRAME_DERIVED *pFrame = (D3DXFRAME_DERIVED*)pFrameBase;
+  D3DXMESHCONTAINER_DERIVED *pMeshContainer = 
+    (D3DXMESHCONTAINER_DERIVED*)pFrameBase->pMeshContainer;
 
-  // Load file content
-  ASSERT(D3DXLoadMeshFromX(pFileName, D3DXMESH_MANAGED, m_pDevice, NULL,
-        &pMatBuf, &pEffBuf, &pObject->nItems, &pMesh));
-  pMaterial = (LPD3DXMATERIAL)pMatBuf->GetBufferPointer();
-  pEffeInst = (LPD3DXEFFECTINSTANCE)pEffBuf->GetBufferPointer();
-
-  // Allocate storate space
-  pObject->pMaterial = new D3DMATERIAL9[pObject->nItems];
-  pObject->pTexture  = new LPDIRECT3DTEXTURE9[pObject->nItems];
-  pObject->pEffect   = new LPD3DXEFFECT[pObject->nItems];
-
-  // Clone the mesh to fit our FVF
-  ASSERT(pMesh->CloneMeshFVF(D3DXMESH_MANAGED, D3DFVF_XYZ|D3DFVF_NORMAL|
-        D3DFVF_TEX1, m_pDevice, &pObject->pMesh));
-
-  // Release the original mesh
-  pMesh->Release();
-
-  // For each element in the mesh
-  for (int i=0; i<pObject->nItems; i++)
-  {
-    // Initialize values
-    pObject->pTexture[i] = 0;
-    pObject->pEffect[i]  = 0;
-    
-    // Load material data
-    pObject->pMaterial[i] = pMaterial[i].MatD3D;
-    pObject->pMaterial[i].Ambient = pObject->pMaterial[i].Diffuse;
-
-    // Load texture data
-    if (pMaterial[i].pTextureFilename)
-    {
-      INFORM(D3DXCreateTextureFromFile(m_pDevice, pMaterial[i].pTextureFilename,
-            &pObject->pTexture[i]));
-    }
-
-    // Load effect data
-    if (pEffeInst[i].pEffectFilename)
-    {
-      // Load file
-      ASSERT(D3DXCreateEffectFromFile(m_pDevice, pEffeInst[i].pEffectFilename,
-            NULL, NULL, 0, NULL, &pObject->pEffect[i], NULL));
-
-      // Setup technique
-      D3DXHANDLE hTechnique;
-      pObject->pEffect[i]->FindNextValidTechnique(NULL, &hTechnique);
-      if(hTechnique) pObject->pEffect[i]->SetTechnique(hTechnique);
-
-      // Setup default data
-      for (int j=0; j<pEffeInst[i].NumDefaults; j++)
-      {
-        LPSTR  pName  = pEffeInst[i].pDefaults[j].pParamName;
-        LPVOID pValue = pEffeInst[i].pDefaults[j].pValue;
-        DWORD  nBytes = pEffeInst[i].pDefaults[j].NumBytes;
-
-        D3DXPARAMETER_DESC desc;
-        pObject->pEffect[i]->GetParameterDesc(pName, &desc);
-
-        switch (desc.Type)
-        {
-          case D3DXPT_BOOL:
-          case D3DXPT_INT:
-          case D3DXPT_FLOAT:
-          case D3DXPT_STRING:
-            INFORM(pObject->pEffect[i]->SetValue(pName, pValue, nBytes));
-            break;
-          case D3DXPT_TEXTURE:
-          case D3DXPT_TEXTURE2D:
-          case D3DXPT_TEXTURE3D:
-          case D3DXPT_TEXTURECUBE:
-            INFORM(pObject->pEffect[i]->SetTexture(pName,
-                  pObject->pTexture[i]));
-            break;
-          default:
-            INFORM("Unknown resource format");
-        }
-      }
-    }
-  }
-  
-  // Release the file buffer
-  pMatBuf->Release();
-  pEffBuf->Release();
-
-  // Initialize object position
-  pObject->vPosition      = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-  pObject->vPVelocity     = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-  pObject->vPAcceleration = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-  pObject->vRotation      = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-  pObject->vRVelocity     = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-  pObject->vRAcceleration = D3DXVECTOR3(0.0f, 0.0f, 0.0f);
-}
-
-void CDXWnd::RendObject(CDXObject *pObject, double Time, double Delta)
-{
-  // Update Position and Rotation data from calculation
-  pObject->vPosition  += pObject->vPVelocity * Delta;
-  pObject->vRotation  += pObject->vRVelocity * Delta;
-  pObject->vPVelocity += pObject->vPAcceleration * Delta;
-  pObject->vRVelocity += pObject->vRAcceleration * Delta;
-
-  // Setup Element Position and Rotation
-  D3DXMATRIX matOut, matTmp;
-  D3DXMatrixRotationX(&matOut, pObject->vRotation.x);
-  matOut *= *D3DXMatrixRotationY(&matTmp, pObject->vRotation.y);
-  matOut *= *D3DXMatrixRotationZ(&matTmp, pObject->vRotation.z);
-  matOut *= *D3DXMatrixTranslation(&matTmp, pObject->vPosition.x,
-      pObject->vPosition.y, pObject->vPosition.z);
-  m_pDevice->SetTransform(D3DTS_WORLD, &matOut);
-
-  // Setup shader constants
   D3DXMATRIX mWorld, mView, mProj;
   m_pDevice->GetTransform(D3DTS_WORLD, &mWorld);
   m_pDevice->GetTransform(D3DTS_VIEW, &mView);
   m_pDevice->GetTransform(D3DTS_PROJECTION, &mProj);
 
-  // Render each element
-  for (int i=0; i<pObject->nItems; i++)
+  // Draw current frame
+  while (pMeshContainer != NULL)
   {
-    UINT uPasses;
+    // Translate animation
+    m_pDevice->SetTransform(D3DTS_WORLD, &pFrame->CombinedTransformationMatrix);
 
-    if (pObject->pEffect[i] != NULL)
+    // Draw mesh container
+    for (int i = 0; i < pMeshContainer->NumMaterials; i++)
     {
-      // Render the scene using the programmable pipeline
-
-      // Setup standard matrix parameters
-      D3DXHANDLE hHandle;
-      hHandle = pObject->pEffect[i]->GetParameterBySemantic(NULL, "WORLD");
-      if (hHandle) INFORM(pObject->pEffect[i]->SetMatrix(hHandle, &mWorld));
-      hHandle = pObject->pEffect[i]->GetParameterBySemantic(NULL, "VIEW");
-      if (hHandle) INFORM(pObject->pEffect[i]->SetMatrix(hHandle, &mView));
-      hHandle = pObject->pEffect[i]->GetParameterBySemantic(NULL, "PROJECTION");
-      if (hHandle) INFORM(pObject->pEffect[i]->SetMatrix(hHandle, &mProj));
-      hHandle = pObject->pEffect[i]->GetParameterBySemantic(NULL, "CTIME");
-      if (hHandle) INFORM(pObject->pEffect[i]->SetFloat(hHandle, Time));
-      hHandle = pObject->pEffect[i]->GetParameterBySemantic(NULL, "DTIME");
-      if (hHandle) INFORM(pObject->pEffect[i]->SetFloat(hHandle, Delta));
-
-      pObject->pEffect[i]->Begin(&uPasses, 0);
-      for (UINT uPass = 0; uPass < uPasses; uPass++)
+      if ((pMeshContainer->ppEffects) &&(pMeshContainer->ppEffects[i] != NULL))
       {
-        pObject->pEffect[i]->BeginPass(uPass);
+        UINT uPasses;
+        D3DXHANDLE hHandle;
+        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
+            NULL, "WORLD");
+        if (hHandle) pMeshContainer->ppEffects[i]->SetMatrix(hHandle, &mWorld);
+        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
+            NULL, "VIEW");
+        if (hHandle) pMeshContainer->ppEffects[i]->SetMatrix(hHandle, &mWorld);
+        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
+            NULL, "PROJECTION");
+        if (hHandle) pMeshContainer->ppEffects[i]->SetMatrix(hHandle, &mWorld);
+        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
+            NULL, "CTIME");
+        if (hHandle) pMeshContainer->ppEffects[i]->SetFloat(hHandle, Time);
+        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
+            NULL, "DTIME");
+        if (hHandle) pMeshContainer->ppEffects[i]->SetFloat(hHandle, Delta);
+
+        pMeshContainer->ppEffects[i]->Begin(&uPasses, 0);
+        for (UINT uPass = 0; uPass < uPasses; uPass++)
         {
-          ASSERT(pObject->pMesh->DrawSubset(i));
-        } 
-        pObject->pEffect[i]->EndPass();
+          pMeshContainer->ppEffects[i]->BeginPass(uPass);
+          pMeshContainer->MeshData.pMesh->DrawSubset(i);
+          pMeshContainer->ppEffects[i]->EndPass();
+        }
+        pMeshContainer->ppEffects[i]->End();
       }
-      pObject->pEffect[i]->End();
-
-    } else {
-      // Render the scene using the fixed pipeline
-      ASSERT(m_pDevice->SetMaterial(&pObject->pMaterial[i]));
-      ASSERT(m_pDevice->SetTexture(0, pObject->pTexture[i]));
-      ASSERT(pObject->pMesh->DrawSubset(i));
+      else
+      {
+        m_pDevice->SetMaterial(&pMeshContainer->pMaterials[i].MatD3D);
+        m_pDevice->SetTexture(0, pMeshContainer->ppTextures[i]);
+        pMeshContainer->MeshData.pMesh->DrawSubset(i);
+      }
     }
-  }
-}
 
-void CDXWnd::KillObject(CDXObject *pObject)
-{
-  if (pObject->nItems != 0)
+    // Draw next mesh
+    pMeshContainer =
+      (D3DXMESHCONTAINER_DERIVED*)pMeshContainer->pNextMeshContainer;
+  }
+
+  // Draw siblings
+  if (pFrame->pFrameSibling)
   {
-    // Release elements
-    delete pObject->pMesh;
-
-    for (int i=0; i<pObject->nItems; i++)
-    {
-      if (pObject->pTexture[i]) pObject->pTexture[i]->Release();
-      if (pObject->pEffect[i])  pObject->pEffect[i]->Release();
-    }
-
-    // Release allocated memory
-    delete [] pObject->pMaterial;
-    delete [] pObject->pTexture;
-    delete [] pObject->pEffect;
+    DrawFrame(pFrame->pFrameSibling, Time, Delta);
   }
 
-  delete pObject;
+  // Draw childs
+  if (pFrame->pFrameFirstChild)
+  {
+    DrawFrame(pFrame->pFrameFirstChild, Time, Delta);
+  }
 }
+
+void CDXWnd::UpdateFrame(LPD3DXFRAME pFrameBase, LPD3DXMATRIX pParentMatrix)
+{
+  D3DXFRAME_DERIVED *pFrame = (D3DXFRAME_DERIVED*)pFrameBase;
+
+  // Update frame matrix
+  if (pParentMatrix == NULL)
+  {
+    pFrame->CombinedTransformationMatrix = pFrame->TransformationMatrix;
+  }
+  else
+  {
+    D3DXMatrixMultiply(&pFrame->CombinedTransformationMatrix,
+        &pFrame->TransformationMatrix, pParentMatrix);
+  }
+
+  // Update siblings
+  if (pFrame->pFrameSibling)
+  {
+    UpdateFrame(pFrame->pFrameSibling, pParentMatrix);
+  }
+
+  // Update child
+  if (pFrame->pFrameFirstChild)
+  {
+    UpdateFrame(pFrame->pFrameFirstChild,
+        &pFrame->CombinedTransformationMatrix);
+  }
+}
+
+void CDXWnd::LoadAnimation(CDXAnimate *pAnimation, LPSTR pFileName)
+{
+  CAllocateHierarchy Alloc;
+
+  D3DXLoadMeshHierarchyFromX(pFileName, D3DXMESH_MANAGED, m_pDevice, &Alloc,
+      NULL, &pAnimation->pFrame, &pAnimation->pController);
+}
+
+void CDXWnd::DrawAnimation(CDXAnimate *pAnimation, double Time, double Delta)
+{
+  if (pAnimation->pController)
+  {
+    pAnimation->pController->AdvanceTime(Delta, NULL);
+    UpdateFrame(pAnimation->pFrame, NULL);
+  }
+
+  DrawFrame(pAnimation->pFrame, Time, Delta);
+}
+
+//=============================================================================
+// Callback Functions
+//=============================================================================
 
 void CDXWnd::OnSetup(D3DPRESENT_PARAMETERS *d3dpp)
 {
@@ -266,6 +421,10 @@ void CDXWnd::OnDestroy()
 {
   PostQuitMessage(0);
 }
+
+//=============================================================================
+// Message Processor
+//=============================================================================
 
 int CDXWnd::MsgProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
