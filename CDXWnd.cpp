@@ -93,7 +93,7 @@ HRESULT CAllocateHierarchy::CreateMeshContainer(
     pMeshContainer->MeshData.pMesh->AddRef();
   }
 
-  // Copy counter
+  // Copy texture and effects
   if (NumMaterials > 0)
   {
     int NumFaces = pMeshData->pMesh->GetNumFaces();
@@ -105,8 +105,14 @@ HRESULT CAllocateHierarchy::CreateMeshContainer(
     pMeshContainer->pAdjacency   = new DWORD[NumFaces*3];
 
     INFORM(pMeshContainer->pMaterials == NULL);
+    INFORM(pMeshContainer->ppTextures == NULL);
+    INFORM(pMeshContainer->pEffects   == NULL);
+    INFORM(pMeshContainer->ppEffects  == NULL);
     INFORM(pMeshContainer->pAdjacency == NULL);
     if ((pMeshContainer->pMaterials == NULL) ||
+        (pMeshContainer->ppTextures == NULL) ||
+        (pMeshContainer->pEffects   == NULL) ||
+        (pMeshContainer->ppEffects  == NULL) ||
         (pMeshContainer->pAdjacency == NULL) )
     {
       return E_OUTOFMEMORY;
@@ -124,53 +130,50 @@ HRESULT CAllocateHierarchy::CreateMeshContainer(
     CopyMemory(pMeshContainer->pAdjacency, pAdjacency, sizeof(DWORD) *
         NumFaces * 3);
 
+    // Assign ambient color value
+    pMeshContainer->pMaterials->MatD3D.Ambient =
+      pMeshContainer->pMaterials->MatD3D.Diffuse;
+
     for (int i = 0; i < NumMaterials; i++)
     {
-      // Load texture file
-      if (pMeshContainer->pMaterials[i].pTextureFilename)
-      if (strlen(pMeshContainer->pMaterials[i].pTextureFilename) > 0)
+      // Load effect file
+      if ((pMeshContainer->pEffects[i].pEffectFilename) &&
+          (strlen(pMeshContainer->pEffects[i].pEffectFilename) > 0))
       {
-        D3DXCreateTextureFromFile(pDevice,
-            pMeshContainer->pMaterials[i].pTextureFilename,
-            &pMeshContainer->ppTextures[i]);
-        pMeshContainer->pMaterials[i].pTextureFilename = NULL;
-      }
-
-      // Load effects file
-      if (pMeshContainer->pEffects[i].pEffectFilename)
-      if (strlen(pMeshContainer->pEffects[i].pEffectFilename) > 0)
-      {
-        D3DXCreateEffectFromFile(pDevice,
-            pMeshContainer->pEffects[i].pEffectFilename,
-            NULL, NULL, 0, NULL, &pMeshContainer->ppEffects[i], NULL);
-        pMeshContainer->pEffects[i].pEffectFilename = NULL;
-
-        for (int j = 0; j < pMeshContainer->pEffects[i].NumDefaults; j++)
+        if (FAILED(D3DXCreateEffectFromFile(
+                pDevice,
+                pMeshContainer->pEffects[i].pEffectFilename,
+                NULL, NULL, 0, NULL, &pMeshContainer->ppEffects[i], NULL)))
         {
-          LPSTR  pName  = pMeshContainer->pEffects[i].pDefaults[j].pParamName;
-          LPVOID pValue = pMeshContainer->pEffects[i].pDefaults[j].pValue;
-          DWORD  nBytes = pMeshContainer->pEffects[i].pDefaults[j].NumBytes;
-
-          switch (pMeshContainer->pEffects[i].pDefaults[j].Type)
-          {
-            case D3DXPT_BOOL:
-            case D3DXPT_INT:
-            case D3DXPT_FLOAT:
-            case D3DXPT_STRING:
-              pMeshContainer->ppEffects[i]->SetValue(pName, pValue, nBytes);
-              break;
-            case D3DXPT_TEXTURE:
-            case D3DXPT_TEXTURE2D:
-            case D3DXPT_TEXTURE3D:
-            case D3DXPT_TEXTURECUBE:
-              pMeshContainer->ppEffects[i]->SetTexture(pName,
-                  pMeshContainer->ppTextures[i]);
-              break;
-            default:
-              INFORM(TRUE);
-          }
+          pMeshContainer->ppEffects[i] = NULL;
+          pMeshContainer->pEffects[i].pEffectFilename = NULL;
+          continue;
+        }
+        else
+        {
+          pMeshContainer->pEffects[i].pEffectFilename = NULL;
         }
       }
+
+      // Load texture file
+      if ((pMeshContainer->pMaterials[i].pTextureFilename) &&
+          (strlen(pMeshContainer->pMaterials[i].pTextureFilename) > 0))
+      {
+        if (FAILED(D3DXCreateTextureFromFile(
+            pDevice,
+            pMeshContainer->pMaterials[i].pTextureFilename,
+            &pMeshContainer->ppTextures[i])))
+        {
+          pMeshContainer->ppTextures[i] = NULL;
+          pMeshContainer->pMaterials[i].pTextureFilename = NULL;
+          continue;
+        }
+        else
+        {
+          pMeshContainer->pMaterials[i].pTextureFilename = NULL;
+        }
+      }
+
     }
   }
 
@@ -277,39 +280,33 @@ void CDXWnd::DrawFrame(LPD3DXFRAME pFrameBase, double Time, double Delta)
   D3DXMESHCONTAINER_DERIVED *pMeshContainer = 
     (D3DXMESHCONTAINER_DERIVED*)pFrameBase->pMeshContainer;
 
-  D3DXMATRIX mWorld, mView, mProj;
-  m_pDevice->GetTransform(D3DTS_WORLD, &mWorld);
-  m_pDevice->GetTransform(D3DTS_VIEW, &mView);
-  m_pDevice->GetTransform(D3DTS_PROJECTION, &mProj);
-
   // Draw current frame
   while (pMeshContainer != NULL)
   {
     // Translate animation
     m_pDevice->SetTransform(D3DTS_WORLD, &pFrame->CombinedTransformationMatrix);
 
+    // Setup shader constants
+    D3DXMATRIX mWorld, mView, mProj;
+    m_pDevice->GetTransform(D3DTS_WORLD, &mWorld);
+    m_pDevice->GetTransform(D3DTS_VIEW, &mView);
+    m_pDevice->GetTransform(D3DTS_PROJECTION, &mProj);
+
     // Draw mesh container
     for (int i = 0; i < pMeshContainer->NumMaterials; i++)
     {
-      if ((pMeshContainer->ppEffects) &&(pMeshContainer->ppEffects[i] != NULL))
+
+      if (pMeshContainer->ppEffects[i] != NULL)
       {
         UINT uPasses;
+
+        // Setup standard matrix parameters
         D3DXHANDLE hHandle;
-        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
-            NULL, "WORLD");
-        if (hHandle) pMeshContainer->ppEffects[i]->SetMatrix(hHandle, &mWorld);
-        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
-            NULL, "VIEW");
-        if (hHandle) pMeshContainer->ppEffects[i]->SetMatrix(hHandle, &mWorld);
-        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
-            NULL, "PROJECTION");
-        if (hHandle) pMeshContainer->ppEffects[i]->SetMatrix(hHandle, &mWorld);
-        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
-            NULL, "CTIME");
-        if (hHandle) pMeshContainer->ppEffects[i]->SetFloat(hHandle, Time);
-        hHandle = pMeshContainer->ppEffects[i]->GetParameterBySemantic(
-            NULL, "DTIME");
-        if (hHandle) pMeshContainer->ppEffects[i]->SetFloat(hHandle, Delta);
+
+        pMeshContainer->ppEffects[i]->SetTechnique("Example");
+        pMeshContainer->ppEffects[i]->SetMatrix("World", &mWorld);
+        pMeshContainer->ppEffects[i]->SetMatrix("View", &mView);
+        pMeshContainer->ppEffects[i]->SetMatrix("Proj", &mProj);
 
         pMeshContainer->ppEffects[i]->Begin(&uPasses, 0);
         for (UINT uPass = 0; uPass < uPasses; uPass++)
@@ -401,7 +398,8 @@ void CDXWnd::DrawAnimation(CDXAnimate *pAnimation, double Time, double Delta)
 void CDXWnd::OnSetup(D3DPRESENT_PARAMETERS *d3dpp)
 {
   d3dpp->Windowed = TRUE;
-  d3dpp->SwapEffect = D3DSWAPEFFECT_DISCARD;
+  d3dpp->SwapEffect = D3DSWAPEFFECT_COPY;
+  d3dpp->BackBufferCount = 1;
   d3dpp->BackBufferFormat = D3DFMT_UNKNOWN;
   d3dpp->EnableAutoDepthStencil = TRUE;
   d3dpp->AutoDepthStencilFormat = D3DFMT_D16;
@@ -435,18 +433,14 @@ int CDXWnd::MsgProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
         D3DPRESENT_PARAMETERS d3dpp;
         ZeroMemory(&d3dpp, sizeof(D3DPRESENT_PARAMETERS));
 
-        //>>>>>>>>>>>>>>
         OnSetup(&d3dpp);
-        //<<<<<<<<<<<<<<
 
         // Create DirextX9 device
         ASSERT(FAILED(g_pD3D->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL,
                 m_hWnd, D3DCREATE_HARDWARE_VERTEXPROCESSING, &d3dpp,
                 &m_pDevice)));
 
-        //>>>>>>>>>
         OnCreate();
-        //<<<<<<<<<
 
         // Setup update timer for 100 FPS
         SetTimer(m_hWnd, 0, 10, NULL);
@@ -459,14 +453,12 @@ int CDXWnd::MsgProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
 
        // Clear the display device
         m_pDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-            D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
+            D3DCOLOR_XRGB(50, 50, 50), 1.0f, 0);
 
         // Render the scene
         ASSERT(m_pDevice->BeginScene());
         {
-          //>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
           OnRender(g_cTime, g_cTime - g_pTime);
-          //<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
         }
         ASSERT(m_pDevice->EndScene());
         ASSERT(m_pDevice->Present(NULL, NULL, NULL, NULL));
@@ -477,9 +469,7 @@ int CDXWnd::MsgProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
       break;
     case WM_DESTROY:
       {
-        //>>>>>>>>>>
         OnDestroy();
-        //<<<<<<<<<<
       }
       break;
   }
