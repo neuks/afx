@@ -77,11 +77,14 @@ HRESULT CAllocateHierarchy::CreateMeshContainer(
     CopyMemory(pMeshContainer->Name, Name, len);
   }
 
+  // Unsupported mesh format
+  ASSERT(pMeshData->pMesh->GetFVF() == 0);
+
   // Save mesh data
   if (!(pMeshData->pMesh->GetFVF() & D3DFVF_NORMAL))
   {
     pMeshData->pMesh->CloneMeshFVF(D3DXMESH_MANAGED,
-        D3DFVF_XYZ|D3DFVF_NORMAL|D3DFVF_TEX1, pDevice,
+        pMeshData->pMesh->GetFVF() | D3DFVF_NORMAL, pDevice,
         &(pMeshContainer->MeshData.pMesh));
     pMeshContainer->MeshData.Type  = pMeshData->Type;
     D3DXComputeNormals(pMeshContainer->MeshData.pMesh, NULL);
@@ -145,6 +148,7 @@ HRESULT CAllocateHierarchy::CreateMeshContainer(
                 pMeshContainer->pEffects[i].pEffectFilename,
                 NULL, NULL, 0, NULL, &pMeshContainer->ppEffects[i], NULL)))
         {
+          INFORM("D3DXCreateEffectFromFile Failed");
           pMeshContainer->ppEffects[i] = NULL;
           pMeshContainer->pEffects[i].pEffectFilename = NULL;
           continue;
@@ -164,6 +168,7 @@ HRESULT CAllocateHierarchy::CreateMeshContainer(
             pMeshContainer->pMaterials[i].pTextureFilename,
             &pMeshContainer->ppTextures[i])))
         {
+          INFORM("D3DXCreateTextureFromFile Failed");
           pMeshContainer->ppTextures[i] = NULL;
           pMeshContainer->pMaterials[i].pTextureFilename = NULL;
           continue;
@@ -303,10 +308,10 @@ void CDXWnd::DrawFrame(LPD3DXFRAME pFrameBase, double Time, double Delta)
         // Setup standard matrix parameters
         D3DXHANDLE hHandle;
 
-        pMeshContainer->ppEffects[i]->SetTechnique("Example");
+        pMeshContainer->ppEffects[i]->SetTechnique("Main");
         pMeshContainer->ppEffects[i]->SetMatrix("World", &mWorld);
         pMeshContainer->ppEffects[i]->SetMatrix("View", &mView);
-        pMeshContainer->ppEffects[i]->SetMatrix("Proj", &mProj);
+        pMeshContainer->ppEffects[i]->SetMatrix("Projection", &mProj);
 
         pMeshContainer->ppEffects[i]->Begin(&uPasses, 0);
         for (UINT uPass = 0; uPass < uPasses; uPass++)
@@ -376,8 +381,9 @@ void CDXWnd::LoadAnimation(CDXAnimate *pAnimation, LPSTR pFileName)
 {
   CAllocateHierarchy Alloc;
 
-  D3DXLoadMeshHierarchyFromX(pFileName, D3DXMESH_MANAGED, m_pDevice, &Alloc,
-      NULL, &pAnimation->pFrame, &pAnimation->pController);
+  INFORM(FAILED(D3DXLoadMeshHierarchyFromX(pFileName, D3DXMESH_MANAGED,
+          m_pDevice, &Alloc, NULL, &pAnimation->pFrame,
+          &pAnimation->pController)));
 }
 
 void CDXWnd::DrawAnimation(CDXAnimate *pAnimation, double Time, double Delta)
@@ -453,7 +459,7 @@ int CDXWnd::MsgProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
 
        // Clear the display device
         m_pDevice->Clear(0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
-            D3DCOLOR_XRGB(50, 50, 50), 1.0f, 0);
+            D3DCOLOR_XRGB(100, 100, 200), 1.0f, 0);
 
         // Render the scene
         ASSERT(m_pDevice->BeginScene());
