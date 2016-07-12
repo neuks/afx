@@ -39,15 +39,15 @@ CApp::~CApp()
   UnregisterClass("WINDOW", GetModuleHandle(NULL));
 }
 
-int CApp::Run()
+int CApp::OnExec()
 {
   MSG msg;
 
   this->OnInit();
 
-  while(::GetMessage(&msg, 0, 0, 0)) {
-    ::TranslateMessage(&msg);
-    ::DispatchMessage(&msg);
+  while(GetMessage(&msg, 0, 0, 0)) {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
   }
   
   this->OnExit();

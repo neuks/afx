@@ -41,7 +41,7 @@
   extern appClass theApp;
 
 #define IMPLEMENT_APP(appClass) \
-  appClass theApp; int main() { return theApp.Run(); }
+  appClass theApp; int main() { return theApp.Exec(); }
 
 HWND LoadToolbar(HINSTANCE hInstance, DWORD dwStyle, WORD wID, HWND hParent);
 

@@ -12,11 +12,9 @@ struct CApp
   CApp();
   ~CApp();
 
-  // Operator Functions
-  int Run();
-
-  // Message Handlers
+  // Virtual Handlers
   virtual void OnInit() {};
+  virtual int  OnExec();
   virtual void OnExit() {};
 };
 
