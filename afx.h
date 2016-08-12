@@ -17,8 +17,8 @@
 #include "CDXWnd.h"
 
 #ifndef DEBUG
-#define INFORM(cond) cond
-#define ASSERT(cond) cond
+#define INFORM(cond)
+#define ASSERT(cond)
 #else
 #define INFORM(cond) \
   if(cond) \
