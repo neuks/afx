@@ -24,15 +24,13 @@
   if(cond) \
   { \
     char buf[255]; \
-    sprintf(buf, "%s:%d:INFORM:%s\n", __FILE__, __LINE__, #cond); \
-    MessageBox(NULL, buf, "Information", MB_ICONINFORMATION | MB_OK); \
+    printf(buf, "%s:%d:INFORM:%s\n", __FILE__, __LINE__, #cond); \
   }
 #define ASSERT(cond) \
   if(cond) \
   { \
     char buf[255]; \
-    sprintf(buf, "%s:%d:ASSERT:%s\n", __FILE__, __LINE__, #cond); \
-    MessageBox(NULL, buf, "Error", MB_ICONERROR | MB_OK); \
+    printf(buf, "%s:%d:ASSERT:%s\n", __FILE__, __LINE__, #cond); \
     exit(-1); \
   }
 #endif //DEBUG
