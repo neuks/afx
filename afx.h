@@ -6,15 +6,8 @@
 #ifndef __CAFX_H__
 #define __CAFX_H__
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <windows.h>
 #include <commctrl.h>
-#include <d3d9.h>
-#include <d3dx9.h>
-#include "CApp.h"
-#include "CWnd.h"
-#include "CDXWnd.h"
 
 #ifndef DEBUG
 #define INFORM(cond)
@@ -35,12 +28,20 @@
   }
 #endif //DEBUG
 
-#define DECLARE_APP(appClass) \
-  extern appClass theApp;
+struct CWnd
+{
+  // Attribute Information
+  HWND m_hWnd;
 
-#define IMPLEMENT_APP(appClass) \
-  appClass theApp; int main() { return theApp.OnExec(); }
+  // Interface Functions
+  CWnd();
+  ~CWnd();
 
+  // Message Handler
+  virtual int MsgProc(UINT uMsg, WPARAM wParam, LPARAM lParam);
+};
+
+LRESULT CALLBACK _WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND LoadToolbar(HINSTANCE hInstance, DWORD dwStyle, WORD wID, HWND hParent);
 
 #endif

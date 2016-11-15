@@ -13,7 +13,7 @@ FCFLAGS=$(INCLUDE) -O2
 LDFLAGS=
 
 # Objectives
-OBJECTS=afx.o CApp.o CWnd.o CDXWnd.o
+OBJECTS=afx.o
 TARGETS=libafx.a
 DEPENDS=$(OBJECTS:.o=.dep) 
 
