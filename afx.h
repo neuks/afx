@@ -9,25 +9,6 @@
 #include <windows.h>
 #include <commctrl.h>
 
-#ifndef DEBUG
-#define INFORM(cond)
-#define ASSERT(cond)
-#else
-#define INFORM(cond) \
-  if(cond) \
-  { \
-    char buf[255]; \
-    printf(buf, "%s:%d:INFORM:%s\n", __FILE__, __LINE__, #cond); \
-  }
-#define ASSERT(cond) \
-  if(cond) \
-  { \
-    char buf[255]; \
-    printf(buf, "%s:%d:ASSERT:%s\n", __FILE__, __LINE__, #cond); \
-    exit(-1); \
-  }
-#endif //DEBUG
-
 struct CWnd
 {
   // Attribute Information
