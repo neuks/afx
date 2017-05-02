@@ -68,12 +68,7 @@ LRESULT CALLBACK _WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
   for(LWnd::iterator i = g_lWndLst.begin(); i != g_lWndLst.end(); i++)
   {
-    // send command to all windows
-    if (uMsg == WM_COMMAND)
-    {
-      (*i)->MsgProc(uMsg, wParam, lParam);
-    }
-    else if((*i)->m_hWnd == hWnd)
+    if((*i)->m_hWnd == hWnd)
     {
       return (*i)->MsgProc(uMsg, wParam, lParam);
     }

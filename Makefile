@@ -5,7 +5,7 @@
 ############################################################################### 
 
 # Configurations
-INCLUDE=-DDEBUG
+INCLUDE=
 ASFLAGS=$(INCLUDE) -O2
 CCFLAGS=$(INCLUDE) -O2
 CXFLAGS=$(INCLUDE) -O2
@@ -13,7 +13,10 @@ FCFLAGS=$(INCLUDE) -O2
 LDFLAGS=
 
 # Objectives
-OBJECTS=afx.o
+OBJECTS=afx_CApp.o \
+				afx_CWnd.o \
+				afx_CDXWnd.o \
+				afx_LoadToolbar.o
 TARGETS=libafx.a
 DEPENDS=$(OBJECTS:.o=.dep) 
 
